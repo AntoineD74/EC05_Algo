@@ -1,0 +1,1172 @@
+Option Explicit
+Option Base 0
+
+Dim opponent_color As Ecolor
+Dim map_shots(11, 11) As String
+Dim origin_boats_found(8), origin_boat_untouched(8) As Variant                 'origin known for boats we found the direction, format (x,y,Direction)
+Dim boats_remaining, previous_boats_remaining, phase As Integer
+Dim torpedo_unused As Boolean
+
+Type shoot_table
+    number_shots As Integer
+    enough_shots As Boolean
+    empty As Boolean
+    shoots_answer() As Variant
+End Type
+
+'///Function will ask the color of the opponent to the board manager
+Private Function GetOpponentColor() As String               'Will return the color of our opponent
+    If BoardManagement.GetTurnColor = green Then
+        GetOpponentColor = Blue
+    Else
+        GetOpponentColor = green
+    End If
+End Function
+
+
+
+'///Function chosing the orientation of all boats and check that there is no intersections and off limits boats
+Public Function pick_check_orientation(origins As Variant)
+    Dim possible_orientation(2) As String
+    Dim size_boats(5) As Integer
+    Dim coordinates(5, 5) As Variant
+    Dim orient(5) As String
+    Dim check1, check2, intersection As Boolean
+    Dim rand As Double
+    Dim i, j, k, q, m, n, l, h As Integer
+    
+    
+    possible_orientation(1) = "R"
+    possible_orientation(2) = "D"
+    
+    
+    size_boats(1) = 5
+    size_boats(2) = 4
+    size_boats(3) = 3
+    size_boats(4) = 3
+    size_boats(5) = 2
+    
+    
+   
+    While check2 = False
+        intersection = False
+        check1 = False
+        check2 = False
+          
+        For i = 1 To 5 Step 1
+
+            check1 = False
+            While check1 = False
+                
+                rand = Rnd()
+                If rand > 0.5 Then
+                    orient(i) = possible_orientation(2)        'we choose an orientation
+                Else
+                    orient(i) = possible_orientation(1)
+                End If
+                                          'check if ther is enough space to put the boat with that origin and this orientation
+                                            'here high
+                
+                If orient(i) = "D" Then                         'down
+                    If Int(Mid(origins(i), 2, 1)) + size_boats(i) - 1 <= 11 Then
+                        check1 = True
+
+                    End If
+                      
+                ElseIf orient(i) = "R" Then                     'right
+                    If Asc(Mid(origins(i), 1, 1)) - 64 + size_boats(i) - 1 <= 11 Then
+                        check1 = True
+                    End If
+                End If
+                
+            Wend
+        Next i
+            
+                
+        For k = 0 To 5 Step 1                       'We trace the future coordinates of the boats
+            For q = 0 To 5 Step 1
+               
+                If orient(k) = "D" Then
+                    coordinates(k, q) = Int(Mid(origins(k), 2, 1)) - q
+                    coordinates(k, q) = Trim(Mid(origins(k), 1, 1)) & Trim(Str(coordinates(k, q)))
+                        
+                ElseIf orient(k) = "R" Then
+                    coordinates(k, q) = Asc(Mid(origins(k), 2, 1)) - 64 + q
+                    coordinates(k, q) = Trim(Str(coordinates(k, q))) & Trim(Mid(origins(k), 2, 1))
+                End If
+           
+            Next q
+        Next k
+        
+                
+               
+        For m = 1 To 5 Step 1                       'comparison of the current boat to all the previous coordinates we have for the boats
+            For n = 1 To 5 Step 1
+                For l = 1 To 5
+                    For h = 1 To 5 Step 1
+                    
+                        If coordinates(l, h) <> "" Then
+                            If m <> l And coordinates(m, n) = coordinates(l, h) Then
+                                intersection = True
+                            End If
+                       End If
+    
+                    Next h
+                Next l
+            Next n
+        Next m
+        
+                
+        If check1 = True And intersection = False Then               'If no intersection, we can place the boat
+            check2 = True
+        ElseIf intersection = True Then
+            check1 = False
+        End If
+                             
+    Wend
+    
+    pick_check_orientation = orient
+
+End Function
+
+
+'///Initialization function picking the origins for all the boats
+Public Function GetInitialization() As ShipsSet
+    Dim response As ShipsSet
+    Dim lenght_boats(5) As Integer
+    Dim origins_all(5), origins_chosen(5), origin(1) As Variant
+    Dim orientations As Variant
+    Dim i, j, rand As Integer
+    Dim rand_x_char As String
+    Dim same_origin, check_space, no_space As Boolean
+    
+    lenght_boats(1) = 5
+    lenght_boats(2) = 4
+    lenght_boats(3) = 3
+    lenght_boats(4) = 3
+    lenght_boats(5) = 2
+    
+    origins_all(1) = Array("A2", "D8", "H9", "I1", "C4")       'Possible combinations
+    origins_all(2) = Array("K6", "I3", "C2", "A8", "H8")
+    origins_all(3) = Array("B9", "H7", "J3", "A4", "C6")
+    origins_all(4) = Array("E7", "H2", "C3", "G9", "H4")
+    origins_all(5) = Array("F1", "B4", "H9", "I3", "C1")
+    
+    rand = (4 * Rnd() + 1)
+
+    
+    For i = 0 To 4
+        origins_chosen(i + 1) = origins_all(rand)(i)
+    Next i
+       
+    orientations = pick_check_orientation(origins_chosen)
+
+    
+    Set response = New ShipsSet                              'We assign what we picked in an object that we return
+    
+    response.CarrierPosition = origins_chosen(1)
+    response.CarrierOrientation = orientations(1)
+    
+    response.BattleShipPosition = origins_chosen(2)
+    response.BattleShipOrientation = orientations(2)
+    
+    response.CruiserPosition = origins_chosen(3)
+    response.CruiserOrientation = orientations(3)
+    
+    response.SubmarinePosition = origins_chosen(4)
+    response.SubmarineOrientation = orientations(4)
+    
+    response.DestroyerPosition = origins_chosen(5)
+    response.DestroyerOrientation = orientations(5)
+    
+    opponent_color = GetOpponentColor()             'get the opponent color here, we will need it for rest of the game
+    phase = 1
+    
+    Set GetInitialization = response
+    
+End Function
+
+'///Function will update the map into a table 11*11
+Public Function update_map(blueprint As String)        'Will update the shots and touches maps of the opponent
+    Dim i, k, x, y As Integer
+    Dim a As String
+    
+    'MsgBox (blueprint)
+    x = 1
+    y = 1
+    For i = 1 To 262 Step 1
+    
+        a = Mid(blueprint, i, 1)
+
+        If a <> "|" And Asc(a) <> 13 And Asc(a) <> 10 And x < 12 Then
+            If a = " " Then
+                map_shots(x, y) = "W"
+            ElseIf a = "B" Then
+                 map_shots(x, y) = "B"
+            ElseIf a = "R" Then
+                 map_shots(x, y) = "R"
+            End If
+
+            y = y + 1
+        
+        End If
+        
+        If y > 11 Then
+            x = x + 1
+            y = 1
+        End If
+    Next i
+
+
+End Function
+
+
+'///Function will return the coordinates where the topedo should be shot from
+Public Function get_torpedo_target()
+    Dim possible_starts(4), starts_available(4), coord_origin(4) As String
+    Dim i, j, counter As Integer
+    Dim checked, random As Boolean
+    Dim answer_target As String
+
+    possible_starts(1) = "R"
+    possible_starts(2) = "L"
+    possible_starts(3) = "T"
+
+    counter = 1
+    random = False
+    For i = 1 To 11 Step 1
+        If counter > 4 Then
+            random = True
+            Exit For
+        Else
+            
+            If map_shots(1, i) = "W" Then
+                starts_available(counter) = "T"
+                coord_origin(counter) = i
+                counter = counter + 1
+            End If
+    
+            If counter < 4 And map_shots(i, 1) = "W" Then
+                starts_available(counter) = "L"
+                coord_origin(counter) = i
+                counter = counter + 1
+            End If
+    
+            If counter < 4 And map_shots(i, 11) = "W" Then
+                starts_available(counter) = "R"
+                coord_origin(counter) = i
+                counter = counter + 1
+            End If
+        End If
+    
+    Next i
+    
+    If random = True Or counter = 1 Then
+        Dim x, dir As Integer
+    
+        x = Int(11 * Rnd() + 1)
+        dir = Int(2 * Rnd() + 1)
+    
+        If dir = 1 Then
+            answer_target = "R" & Trim(Str(x))
+            
+        ElseIf dir = 2 Then
+            answer_target = "L" & Trim(Str(x))
+        End If
+    
+    Else
+        For i = 1 To counter - 1 Step 1
+    
+            checked = True
+            For j = 1 To 3 Step 1
+                If starts_available(i) = "L" Then
+                    If map_shots(coord_origin(i), j) = "B" Or map_shots(coord_origin(i), j) = "R" Then
+                        checked = False
+                    End If
+    
+                ElseIf starts_available(i) = "R" Then
+                    If map_shots(coord_origin(i), 12 - j) = "B" Or map_shots(coord_origin(i), 12 - j) = "R" Then
+                        checked = False
+                    End If
+    
+                ElseIf starts_available(i) = "T" Then
+                    If map_shots(j, coord_origin(i)) = "B" Or map_shots(j, coord_origin(i)) = "R" Then
+                        checked = False
+                    End If
+    
+                End If
+            Next j
+    
+            If checked Then
+                If starts_available(i) = 0 And coord_origin(i) = 0 Then
+                    answer_target = "R1"
+                Else
+                    answer_target = Trim(starts_available(i)) & Trim(Str(coord_origin(i)))
+                End If
+                Exit For
+            End If
+    
+        Next i
+    End If
+    
+    get_torpedo_target = answer_target
+
+End Function
+
+
+'///Function will return the asked number of shots in diagonal shooting (1 case every 3) for the 1st phase
+Public Function diagonal_shots(remaining_shots)
+    Dim x, y, i, j, counter, number_try As Integer
+    Dim checked, too_much_try As Boolean
+    Dim shoot_list() As Variant
+    Dim coord(2) As Integer
+
+    ReDim shoot_list(remaining_shots)
+
+    counter = 1
+    too_much_try = False
+    
+    For i = 1 To remaining_shots Step 1
+
+        checked = False
+        number_try = 0
+        While checked <> True
+            number_try = number_try + 1
+            x = Int(11 * Rnd() + 1)
+
+            If x Mod 2 Then                     'If x is even y is even too
+                If x = 3 Then
+                    y = 2
+                ElseIf x = 6 Then
+                    y = 5
+                ElseIf x = 9 Then
+                    y = 8
+                End If
+                
+            ElseIf x Mod 3 Then
+                y = Int(3 * Rnd() + 1)
+                y = 2 * y
+                
+            Else                                'Similarly if x is odd y is odd too
+                y = Int(3 * Rnd() + 1)
+                y = 3 * y
+            End If
+            
+            If map_shots(x, y) = "W" Then
+                checked = True
+                If counter <> 1 Then
+                    For j = 1 To counter - 1 Step 1                       'checking if the point is not already in the table
+                        If x = shoot_list(j)(1) And y = shoot_list(j)(2) Then
+                            checked = False
+                        End If
+                    Next j
+                End If
+            End If
+
+            If number_try >= 500 Then
+                too_much_try = True
+                checked = True
+            End If
+        Wend
+
+        If too_much_try Then
+            Exit For
+        End If
+    
+        coord(1) = x
+        coord(2) = y
+        shoot_list(counter) = coord
+        counter = counter + 1
+        number_try = number_try + 1
+    Next i
+    
+    If too_much_try Then
+        coord(1) = 0                        'Filling our table of return with zero, this will be interpreted as an error
+        coord(2) = 0
+        shoot_list(1) = coord
+        shoot_list(2) = coord
+        shoot_list(3) = coord
+        diagonal_shots = shoot_list
+    Else
+        diagonal_shots = shoot_list
+    End If
+
+End Function
+
+
+'Function will search and register the origin and orientation of the boats we already found, it will return a list of points we don't know the direction
+Public Function update_orientation()
+    Dim coord(2), coord_none(2), coord_none_triple(3) As Integer
+    Dim touched(121), infos(3) As Variant
+    Dim i, j, k, count, l As Integer
+    Dim found As Boolean
+    
+    coord_none(1) = 0
+    coord_none(2) = 0
+    
+    coord_none_triple(1) = 0
+    coord_none_triple(2) = 0
+    coord_none_triple(3) = 0
+    
+    count = 1
+    For i = 1 To 11 Step 1
+        For j = 1 To 11 Step 1
+            
+            If map_shots(i, j) = "R" Then       'We create a list of all points we touched in the map
+                coord(1) = j
+                coord(2) = i
+                touched(count) = coord
+                
+            Else
+                coord(1) = 0
+                coord(2) = 0
+                touched(count) = coord
+            End If
+            
+            count = count + 1
+        Next j
+    Next i
+
+    i = 1
+    j = 1
+    count = 1
+    For i = 1 To 121 Step 1
+    
+        If touched(i)(1) <> 0 Then
+            For j = 1 To 121 Step 1
+                found = False
+             
+                If i <> j Then            'We check there is touched points side by side
+                    If touched(j)(1) = touched(i)(1) + 1 And touched(j)(2) = touched(i)(2) Then    'If there is we register that we found the orientation
+                        found = True
+                        infos(3) = "R"
+                        touched(j) = coord_none
+                        
+                        If j < 121 Then
+                            If touched(j + 1)(1) = touched(i)(1) + 2 Then           'deleting all points next to each other on x line
+                                touched(j + 1) = coord_none
+                                If j < 119 Then
+                                    If touched(j + 2)(1) = touched(i)(1) + 3 Then
+                                        touched(j + 2) = coord_none
+                                        If j < 118 And touched(j + 3)(1) = touched(i)(1) + 4 Then
+                                            touched(j + 3) = coord_none
+                                        End If
+                                    End If
+                                End If
+                            End If
+                        End If
+                        
+                    ElseIf touched(j)(2) = touched(i)(2) + 1 And touched(j)(1) = touched(i)(1) Then
+                        found = True
+                        infos(3) = "D"
+                        touched(j) = coord_none
+                    
+                        If j < 110 Then
+                            If touched(j + 11)(2) = touched(i)(2) + 2 Then 'on y line now
+                                touched(j + 11) = coord_none
+                                If j < 99 Then
+                                    If touched(j + 22)(2) = touched(i)(2) + 3 Then
+                                        touched(j + 22) = coord_none
+                                        If j < 88 Then
+                                            If touched(j + 33)(2) = touched(i)(2) + 4 Then
+                                                touched(j + 33) = coord_none
+                                            End If
+                                        End If
+                                    End If
+                                End If
+                            End If
+                        End If
+                    
+                    End If
+                End If
+                
+                If found = True Then
+                    infos(1) = touched(i)(1)                         'we register the origin and increment the counter
+                    infos(2) = touched(i)(2)
+                    origin_boats_found(count) = infos
+                    infos(1) = touched(i)(2)
+                    infos(2) = touched(i)(1)
+                    origin_boat_untouched(count) = infos
+                    count = count + 1
+                    'MsgBox (infos(1) & infos(2) & infos(3))
+                    
+                    touched(i) = coord_none
+                End If
+                
+            Next j
+        End If
+    Next i
+    
+    For k = count To 8 Step 1
+        origin_boats_found(k) = coord_none_triple           'Filling the rest of the table to avoid errors
+        origin_boat_untouched(k) = coord_none_triple
+    Next k
+        
+    update_orientation = touched
+
+End Function
+
+
+'Function will return a random point we haven't shot yet
+'Include a security for the recent points, up to 3 to be different before the map update
+Public Function get_random_shot(number_shots As Integer)
+    Dim coord(2) As Integer
+    Dim answer_shots() As Variant
+    Dim x, y, i, j, try_nb, counter As Integer
+    Dim checked, too_much_try As Boolean
+    
+    ReDim answer_shots(number_shots)
+    
+    
+    For i = 1 To number_shots Step 1
+        checked = False
+        too_much_try = False
+        try_nb = 1
+        While checked = False
+            x = Int(11 * Rnd + 1)
+            y = Int(11 * Rnd + 1)
+            coord(1) = x
+            coord(2) = y
+            
+            If map_shots(x, y) = "W" Then
+                If i = 1 Then
+                    checked = True
+                    
+                ElseIf i <> 1 Then
+                    checked = True
+                    For j = 1 To i - 1 Step 1
+                        If coord(1) = answer_shots(j)(1) And coord(2) = answer_shots(j)(2) Then
+                            checked = False
+                        End If
+                    Next j
+                End If
+            End If
+            
+            try_nb = try_nb + 1
+            If try_nb > 100 Then
+                checked = True
+                too_much_try = True
+            End If
+        Wend
+        
+        If too_much_try Then
+            Exit For
+        End If
+        
+        
+        answer_shots(i) = coord
+    Next i
+    
+     
+    If too_much_try Then
+        i = 1
+        j = 1
+        counter = 1
+        For i = 1 To 11
+            For j = 1 To 11
+                If map_shots(i, j) = "W" And counter < number_shots + 1 Then
+                    coord(1) = i
+                    coord(2) = j
+                    answer_shots(counter) = coord
+                    counter = counter + 1
+                End If
+            Next j
+        Next i
+    End If
+        
+    
+    
+    get_random_shot = answer_shots
+    
+
+End Function
+
+
+
+
+'///Function will return a set of points to search in order to find the orientation of boats we aleaready hit once
+Public Function orientation_finder(touched_points As Variant, remaining_shots As Integer) As shoot_table
+     Dim i, j, no_shoots, counter As Integer
+     Dim color_h, color_d, color_l, color_r As String
+     Dim possible_shots(8), shoots_answer() As Variant
+     Dim coord(2), rand_shoot() As Integer
+     Dim checked As Boolean
+     
+     
+     ReDim shoots_answer(remaining_shots)
+     
+     counter = 1
+     orientation_finder.enough_shots = False
+     For i = 1 To UBound(touched_points) Step 1
+        
+        If touched_points(i)(1) <> 0 Then
+
+            If touched_points(i)(2) <> 1 Then
+                color_h = map_shots(touched_points(i)(2) - 1, touched_points(i)(1))
+            Else
+                color_h = "out"
+            End If
+            
+            If touched_points(i)(2) <> 11 Then
+                color_d = map_shots(touched_points(i)(2) + 1, touched_points(i)(1))
+            Else
+                color_d = "out"
+            End If
+            
+            If touched_points(i)(1) <> 1 Then
+                color_l = map_shots(touched_points(i)(2), touched_points(i)(1) - 1)
+            Else
+                color_l = "out"
+            End If
+            
+            If touched_points(i)(1) <> 11 Then
+                color_r = map_shots(touched_points(i)(2), touched_points(i)(1) + 1)
+            Else
+                color_r = "out"
+            End If
+            
+            
+            If color_h = "W" Then                          'Taking all non searched points into a table
+                no_shoots = no_shoots + 1
+                coord(1) = touched_points(i)(2) - 1
+                coord(2) = touched_points(i)(1)
+                possible_shots(counter) = coord
+                'MsgBox (counter & " " & possible_shots(counter)(2))
+                counter = counter + 1
+            End If
+            
+            If color_d = "W" Then
+                no_shoots = no_shoots + 1
+                coord(1) = touched_points(i)(2) + 1
+                coord(2) = touched_points(i)(1)
+                possible_shots(counter) = coord
+                'MsgBox (counter & " " & possible_shots(counter)(2))
+                counter = counter + 1
+            End If
+            
+            If color_l = "W" Then
+                no_shoots = no_shoots + 1
+                coord(1) = touched_points(i)(2)
+                coord(2) = touched_points(i)(1) - 1
+                possible_shots(counter) = coord
+                'MsgBox (counter & " " & possible_shots(counter)(2))
+                counter = counter + 1
+            End If
+            
+            If color_r = "W" Then
+                no_shoots = no_shoots + 1
+                coord(1) = touched_points(i)(2)
+                coord(2) = touched_points(i)(1) + 1
+                possible_shots(counter) = coord
+                'MsgBox (counter & " " & possible_shots(counter)(2))
+                counter = counter + 1
+            End If
+            
+            If no_shoots >= remaining_shots Then            'As soon as we have enough points we exit the for loop
+                orientation_finder.enough_shots = True
+                Exit For
+            End If
+            
+        End If
+     Next i
+    
+    checked = False
+
+    If counter = 1 Then
+        orientation_finder.empty = True
+        orientation_finder.enough_shots = False
+        
+    ElseIf counter <= remaining_shots Then
+        orientation_finder.enough_shots = False
+        If counter = 2 Then
+            orientation_finder.number_shots = 1
+            shoots_answer(1) = possible_shots(1)
+            orientation_finder.shoots_answer = shoots_answer
+            
+        ElseIf counter = 3 Then
+            orientation_finder.number_shots = 2
+            shoots_answer(1) = possible_shots(1)
+            shoots_answer(2) = possible_shots(2)
+            orientation_finder.shoots_answer = shoots_answer
+        End If
+            
+    ElseIf counter > remaining_shots Then
+        j = 1
+        For j = 1 To remaining_shots Step 1
+            shoots_answer(j) = possible_shots(j)            'Reducing to the number of remaining shots
+        Next j
+        orientation_finder.enough_shots = True
+        orientation_finder.empty = False
+        orientation_finder.shoots_answer = shoots_answer
+    End If
+     
+End Function
+
+
+'///Third phase
+'///It returns the points to shoot to sink the remaining boats
+Function sinker(remaining_shots As Integer) As shoot_table
+    Dim to_shoot() As Variant
+    Dim coord(2), coord_none(2) As Integer
+    Dim i, j, counter As Integer
+    Dim enough_shots, end_reached As Boolean
+    
+    ReDim to_shoot(remaining_shots)
+    
+    coord_none(1) = 0
+    coord_none(2) = 0
+
+    counter = 1
+    enough_shots = False
+    end_reached = False
+    For i = 1 To UBound(origin_boats_found) Step 1
+        
+        If origin_boats_found(i)(1) <> 0 Then
+
+            For j = 1 To 5 Step 1
+                
+                If origin_boats_found(i)(1) + j > 11 Or origin_boats_found(i)(2) + j > 11 Then  'We exit the for if we reach the end of the map
+                    Exit For
+                End If
+            
+                If counter = remaining_shots Then        'If we have enough position to shoot we exit the For loop
+                    sinker.enough_shots = True
+                    Exit For
+                End If
+                
+                
+                If origin_boats_found(i)(3) = "R" Then
+                    If map_shots(origin_boats_found(i)(2) + j, origin_boats_found(i)(1)) = "B" Then         'testing if we reached the edge of the boat
+                        end_reached = True
+                        Exit For
+                    End If
+                
+                    If map_shots(origin_boats_found(i)(2), origin_boats_found(i)(1) + j) = "W" Then
+                        coord(1) = origin_boats_found(i)(2)
+                        coord(2) = origin_boats_found(i)(1) + j
+                        
+                        to_shoot(counter) = coord
+                        counter = counter + 1
+                    End If
+                    
+                ElseIf origin_boats_found(i)(3) = "D" Then
+                    If map_shots(origin_boats_found(i)(2) + j, origin_boats_found(i)(1)) = "B" Then     'testing if we reached the edge of the boat
+                        end_reached = True
+                        Exit For
+                    End If
+                    
+                    If map_shots(origin_boats_found(i)(2) + j, origin_boats_found(i)(1)) = "W" Then
+                        coord(1) = origin_boats_found(i)(2) + j
+                        coord(2) = origin_boats_found(i)(1)
+                        to_shoot(counter) = coord
+                        counter = counter + 1
+                    End If
+                End If
+
+            Next j
+        
+        
+        
+            If counter > remaining_shots Then       'This condition is used twice in the loop to avoid any error if an unnecesseary shoot is generated
+                sinker.enough_shots = True
+                Exit For
+            End If
+
+            If end_reached = True Then
+                
+                If boats_remaining < previous_boats_remaining Then
+                    origin_boats_found(i) = coord_none
+                Else
+               
+                    If origin_boats_found(i)(3) = "R" And origin_boats_found(i)(1) <> 1 And map_shots(origin_boats_found(i)(2), origin_boats_found(i)(1) - 1) = "W" Then          'If the boat is still not sinked we check the point before the point we started from
+                        coord(1) = origin_boats_found(i)(2)
+                        coord(2) = origin_boats_found(i)(1) - 1
+                        to_shoot(counter) = coord
+                        counter = counter + 1
+                        
+                    ElseIf origin_boats_found(i)(3) = "D" And origin_boats_found(i)(2) <> 1 And map_shots(origin_boats_found(i)(2) - 1, origin_boats_found(i)(1)) = "W" Then
+                        coord(1) = origin_boats_found(i)(2) - 1
+                        coord(2) = origin_boats_found(i)(1)
+                        to_shoot(counter) = coord
+                        counter = counter + 1
+                    End If
+                End If
+            End If
+        End If
+        
+        If counter > remaining_shots Then
+            sinker.enough_shots = True
+            Exit For
+        End If
+    Next i
+    
+    If counter = 1 Then
+        sinker.empty = True
+        sinker.enough_shots = False
+    ElseIf counter <= remaining_shots Then
+        sinker.enough_shots = False
+        If counter = 2 Then
+            sinker.number_shots = 1
+        ElseIf counter = 3 Then
+            sinker.number_shots = 2
+        End If
+    End If
+    
+    sinker.shoots_answer = to_shoot
+       
+End Function
+
+
+
+'///Function will return points to shoot to find the last point we might miss, it will search before and after the points
+Public Function find_last_point(remaining_shots) As shoot_table
+
+    Dim i, j, k, number_touched, counter As Integer
+    Dim last_origin(2), coord(2) As Integer
+    Dim to_shoot(3) As Variant
+    Dim origins(8) As Variant
+    Dim orientations(8) As String
+    Dim number_reached As Boolean
+    
+
+    For i = 1 To 11 Step 1
+        For j = 1 To 11 Step 1
+            If map_shots(i, j) = "R" Then
+                number_touched = number_touched + 1             'counting all points touched so far
+            End If
+        Next j
+    Next i
+    
+    counter = 1
+    If number_touched < 15 Then                              'If there is more than 2 points remaining we don't use this function
+        find_last_point.empty = True
+    Else
+        i = 1
+        j = 1
+        number_reached = False
+        For i = 1 To 8 Step 1
+                'MsgBox (origin_boat_untouched(i)(1) & origin_boat_untouched(i)(2))
+            If number_reached Then
+                Exit For
+            End If
+            
+            For j = 1 To 5
+                If counter > 3 Then         'Exit if we have enough points
+                    number_reached = True
+                    Exit For
+                End If
+                
+                If origin_boat_untouched(i)(1) <> 0 Then
+                    If origin_boat_untouched(i)(3) = "R" Then
+                        
+                        If origin_boat_untouched(i)(2) + j <= 11 Then
+                        
+                            If origin_boat_untouched(i)(2) <> 1 Then
+                                If map_shots(origin_boat_untouched(i)(1), origin_boat_untouched(i)(2) - 1) = "W" Then         'We add the point before the origin if it is white
+                                    coord(1) = origin_boat_untouched(i)(1)
+                                    coord(2) = origin_boat_untouched(i)(2) - 1
+                                    to_shoot(counter) = coord
+                                    counter = counter + 1
+                                End If
+                            End If
+                            
+                            If map_shots(origin_boat_untouched(i)(1), origin_boat_untouched(i)(2) + j) = "B" And map_shots(origin_boat_untouched(i)(1), origin_boat_untouched(i)(2) + j - 1) = "R" Then
+                                Exit For                                                           'We exit the loop if there is a black point after a red one
+                            End If
+                            
+                            If map_shots(origin_boat_untouched(i)(1), origin_boat_untouched(i)(2) + j) = "W" And counter <> 4 Then            'shooting first white point next to the boat
+                                coord(1) = origin_boat_untouched(i)(1)
+                                coord(2) = origin_boat_untouched(i)(2) + j
+                                to_shoot(counter) = coord
+                                counter = counter + 1
+                                Exit For
+                            End If
+                            
+                        If counter > 3 Then         'Exit if we have enough points
+                            number_reached = True
+                            Exit For
+                        End If
+                    End If
+                    
+                    
+                    ElseIf origin_boat_untouched(i)(3) = "D" Then
+                        If origin_boat_untouched(i)(1) + j <= 11 Then
+                        
+                            If origin_boat_untouched(i)(1) <> 1 And counter <> 4 Then
+                                If map_shots(origin_boat_untouched(i)(1) - 1, origin_boat_untouched(i)(2)) = "W" Then       'We add the point before the origin if it is white
+                                    coord(1) = origin_boat_untouched(i)(1) - 1
+                                    coord(2) = origin_boat_untouched(i)(2)
+                                    to_shoot(counter) = coord
+                                    counter = counter + 1
+                                End If
+                            End If
+                            
+                            If map_shots(origin_boat_untouched(i)(1) + j, origin_boat_untouched(i)(2)) = "B" And map_shots(origin_boat_untouched(i)(1) + j - 1, origin_boat_untouched(i)(2)) = "R" Then
+                                Exit For                                                           'We exit the loop if there is a black point after a red one
+                            End If
+                            
+                            If map_shots(origin_boat_untouched(i)(1) + j, origin_boat_untouched(i)(2)) = "W" And counter <> 4 Then            'shooting first white point next to the boat
+                                coord(1) = origin_boat_untouched(i)(1) + j
+                                coord(2) = origin_boat_untouched(i)(2)
+                                to_shoot(counter) = coord
+                                counter = counter + 1
+                                Exit For
+                            End If
+                        End If
+                    End If
+                    
+                    If counter > 3 Then         'Exit if we have enough points
+                        number_reached = True
+                        Exit For
+                    End If
+                    
+                End If
+                
+            Next j
+            
+        Next i
+    End If
+        
+    If counter = 1 Then
+        find_last_point.empty = True
+        find_last_point.enough_shots = False
+        
+    ElseIf counter <= remaining_shots Then
+        find_last_point.empty = False
+        find_last_point.enough_shots = False
+        If counter = 2 Then
+            find_last_point.number_shots = 1
+        ElseIf counter = 3 Then
+            find_last_point.number_shots = 2
+        End If
+        
+    Else
+        find_last_point.empty = False
+        find_last_point.enough_shots = True
+    End If
+    
+    find_last_point.shoots_answer = to_shoot
+
+End Function
+
+
+'///Function takes as input a table of integer and returns a string with the coordinates in the right format
+'///If the array is empty, the function wil return -1
+Public Function get_chr(coord As Variant)
+    Dim coord_chr As String
+    
+    If IsEmpty(coord) <> True And coord(1) <> 0 Then
+        coord_chr = Trim(Chr(coord(2) + 64)) & Trim(Str(coord(1)))
+        get_chr = coord_chr
+    Else
+       get_chr = -1
+    End If
+
+End Function
+
+
+
+Public Function GetShotsTarget() As ShotsSet
+    Dim response As ShotsSet
+    Dim map_string As String
+    Dim remaining_ships, remaining_shots, test, i, j, number_touched As Integer
+    Dim two_shots(), three_shots() As Variant
+    Dim touched() As Variant
+    Dim shoots_to_do As shoot_table
+    Dim shoots_to_sink As shoot_table
+    Dim last_point As shoot_table
+
+
+'///////////////////////////////////////////////SETUP/////////////////////////////////////////////////////
+    'MsgBox (opponent_color)
+    map_string = BoardManagement.GetSeaBluePrint(opponent_color)        'update the map and orientations for this tour
+    update_map (map_string)
+    
+    touched = update_orientation()
+    
+    
+    remaining_ships = BoardManagement.GetNumberOfShipsRemaining(opponent_color)
+    previous_boats_remaining = boats_remaining
+    boats_remaining = remaining_ships
+    
+    If remaining_ships > 4 Then                             'Calculate how many shots we have remaining
+        remaining_shots = 3
+    ElseIf remaining_ships > 2 Then
+        remaining_shots = 2
+    Else
+        remaining_shots = 1
+    End If
+ 
+    number_touched = 0
+    For i = 1 To 11 Step 1
+        For j = 1 To 11 Step 1
+            If map_shots(i, j) = "R" Then
+                number_touched = number_touched + 1
+            End If
+        Next j
+    Next i
+    
+    If phase <> 2 And phase <> 3 Then
+        phase = 1
+    End If
+    
+    If number_touched >= 5 And phase <> 3 Then
+        phase = 2
+    End If
+    
+    
+    Set response = New ShotsSet
+'///////////////////////////////////////////Phase 1: First search//////////////////////////////////////////
+    
+    response.Torpedo = True
+    response.TorpedoDirection = get_torpedo_target()
+    torpedo_unused = False
+
+    If phase = 1 Then                                    'first phase with random targets
+        three_shots = diagonal_shots(3)
+
+        response.FirstShot = get_chr(three_shots(1))
+        response.SecondShot = get_chr(three_shots(2))
+        response.ThirdShot = get_chr(three_shots(3))
+
+
+'////////////////////////////////////Phase 2: Orientation finder//////////////////////////////////////////
+
+    ElseIf phase = 2 Then
+        shoots_to_do = orientation_finder(touched, 3)
+
+        If shoots_to_do.empty <> True Then
+            If shoots_to_do.enough_shots = True Then
+                response.FirstShot = get_chr(shoots_to_do.shoots_answer(1))
+                response.SecondShot = get_chr(shoots_to_do.shoots_answer(2))
+                response.ThirdShot = get_chr(shoots_to_do.shoots_answer(3))
+            
+            ElseIf shoots_to_do.enough_shots = False And shoots_to_do.number_shots = 2 Then
+                two_shots = get_random_shot(2)
+                response.FirstShot = get_chr(shoots_to_do.shoots_answer(1))
+                response.SecondShot = get_chr(shoots_to_do.shoots_answer(2))
+                response.ThirdShot = get_chr(two_shots(1))
+            
+            ElseIf shoots_to_do.enough_shots = False And shoots_to_do.number_shots = 1 Then
+                two_shots = get_random_shot(2)
+                response.FirstShot = get_chr(shoots_to_do.shoots_answer(1))
+                response.SecondShot = get_chr(two_shots(1))
+                response.ThirdShot = get_chr(two_shots(2))
+            End If
+        Else
+            three_shots = get_random_shot(3)
+            response.FirstShot = get_chr(three_shots(1))
+            response.SecondShot = get_chr(three_shots(2))
+            response.ThirdShot = get_chr(three_shots(3))
+            phase = 3
+        End If
+
+    
+    
+'////////////////////////////////////Phase 3: Sink and finish//////////////////////////////////////////
+    
+    
+    ElseIf phase = 3 Then
+        shoots_to_sink = sinker(3)
+
+        If shoots_to_sink.empty <> True Then
+            
+            If shoots_to_sink.enough_shots = True Then
+                response.FirstShot = get_chr(shoots_to_sink.shoots_answer(1))
+                response.SecondShot = get_chr(shoots_to_sink.shoots_answer(2))
+                response.ThirdShot = get_chr(shoots_to_sink.shoots_answer(3))
+            
+            ElseIf shoots_to_sink.enough_shots = False And shoots_to_sink.number_shots = 2 Then
+                two_shots = get_random_shot(2)
+                response.FirstShot = get_chr(shoots_to_sink.shoots_answer(1))
+                response.SecondShot = get_chr(shoots_to_sink.shoots_answer(2))
+                response.ThirdShot = get_chr(two_shots(1))
+            
+            ElseIf shoots_to_sink.enough_shots = False And shoots_to_sink.number_shots = 1 Then
+                two_shots = get_random_shot(2)
+                response.FirstShot = get_chr(shoots_to_sink.shoots_answer(1))
+                response.SecondShot = get_chr(two_shots(1))
+                response.ThirdShot = get_chr(two_shots(2))
+            End If
+            
+            
+        Else
+            shoots_to_do = orientation_finder(touched, 3)       'Using the orientation finder agin to find the orientation of the new points we found
+            
+            If shoots_to_do.empty <> True Then
+            
+                If shoots_to_do.enough_shots = True Then
+                    response.FirstShot = get_chr(shoots_to_do.shoots_answer(1))
+                    response.SecondShot = get_chr(shoots_to_do.shoots_answer(2))
+                    response.ThirdShot = get_chr(shoots_to_do.shoots_answer(3))
+                
+                ElseIf shoots_to_do.enough_shots = False And shoots_to_do.number_shots = 2 Then
+                    two_shots = get_random_shot(2)
+                    response.FirstShot = get_chr(shoots_to_do.shoots_answer(1))
+                    response.SecondShot = get_chr(shoots_to_do.shoots_answer(2))
+                    response.ThirdShot = get_chr(two_shots(1))
+                
+                ElseIf shoots_to_do.enough_shots = False And shoots_to_do.number_shots = 1 Then
+                    two_shots = get_random_shot(2)
+                    response.FirstShot = get_chr(shoots_to_do.shoots_answer(1))
+                    response.SecondShot = get_chr(two_shots(1))
+                    response.ThirdShot = get_chr(two_shots(2))
+                End If
+ 
+            
+            Else                                        'If we can't search for orientation we shoot again of the diagonals
+                three_shots = diagonal_shots(3)
+                last_point = find_last_point(2)
+            
+                If last_point.empty <> True Then
+                    If last_point.enough_shots = True Then
+                        If three_shots(1)(1) <> 0 Then
+                            
+                            response.FirstShot = get_chr(last_point.shoots_answer(1))
+                            response.SecondShot = get_chr(last_point.shoots_answer(2))
+                            response.ThirdShot = get_chr(three_shots(1))
+                        Else
+                            three_shots = get_random_shot(1)
+                            response.FirstShot = get_chr(last_point.shoots_answer(1))
+                            response.SecondShot = get_chr(last_point.shoots_answer(2))
+                            response.ThirdShot = get_chr(three_shots(1))
+                        End If
+                    Else
+                       If last_point.number_shots = 1 Then
+                            three_shots = get_random_shot(2)
+                            response.FirstShot = get_chr(last_point.shoots_answer(1))
+                            response.SecondShot = get_chr(three_shots(1))
+                            response.ThirdShot = get_chr(three_shots(2))
+                       End If
+                    End If
+                    
+                Else
+                    three_shots = diagonal_shots(3)         'If we can't shoot anymore on the diagonals and final point, we shoot randomly
+                    If three_shots(1)(1) <> 0 Then
+                        two_shots = get_random_shot(2)
+                        response.FirstShot = get_chr(three_shots(1))
+                        response.SecondShot = get_chr(two_shots(1))
+                        response.ThirdShot = get_chr(three_shots(2))      'Including a random shot with the diagonals can speed things if we are lucky
+                    Else
+                        three_shots = get_random_shot(3)                  'If we can't shoot anymore on the diagonals, we shoot randomly
+                        response.FirstShot = get_chr(three_shots(1))
+                        response.SecondShot = get_chr(three_shots(2))
+                        response.ThirdShot = get_chr(three_shots(3))
+                    End If
+                End If
+            End If
+           
+        End If
+    
+    End If
+        
+        
+    Set GetShotsTarget = response
+    
+    previous_boats_remaining = remaining_ships              'we update the number of remaining_boats
+
+End Function
+
+
+
+
